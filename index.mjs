@@ -1,4 +1,4 @@
-import { BreakoutRoom } from "breakout-room";
+import { BreakoutRoom, RoomManager } from "breakout-room";
 import OpenAI from "openai";
 
 const openai = new OpenAI();
@@ -58,12 +58,10 @@ async function generateObject() {
   ];
 
   const word = words[Math.floor(Math.random() * words.length)];
-  console.log("Generated object:", word);
   return word;
 }
 
 async function getResponse(messages) {
-  console.log("Generating answer...");
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages,
@@ -71,15 +69,19 @@ async function getResponse(messages) {
   return response.choices[0].message.content;
 }
 
-async function playGame() {
-  const room = new BreakoutRoom();
+function roomPrint(room, message) {
+  console.log(`${room.getRoomInfo().roomId}: ${message}`);
+}
+
+async function playGame(room) {
   const invite = await room.ready();
   let peerKey = "";
 
-  console.log("Invite your friend to play 20 Questions with you: ", invite);
+  roomPrint(room, `Invite your friend to play 20 Questions with you:  ${invite}`);
 
   let questionsLeft = 20;
   const object = await generateObject();
+  roomPrint(room, `Generated object: ${object}`);
   /** @type {import("openai/resources").ChatCompletionCreateParamsNonStreaming["messages"]} */
   const messages = [
     {
@@ -93,80 +95,68 @@ async function playGame() {
     },
   ];
 
-  room.on("peerEntered", (key) => {
-    console.log("peer entered the room", key);
+  room.on("peerEntered", async (key) => {
+    roomPrint(room, `Peer entered the room: ${key}`);
     peerKey = key;
-    room.message(
+    await room.message(
       `Welcome to 20 Questions! I've thought of an object. Ask me yes/no questions to guess what it is.\nYou have ${questionsLeft} questions left.`
     );
   });
 
   room.on("peerLeft", (key) => {
-    console.log("peer left the room", key);
-    shutdown();
+    roomPrint(room, `Peer left the room: ${key}`);
+    gameOver();
   });
 
-  let isGenerating = false;
 
   room.on("message", async (message) => {
-    // shouldn't need to do this but getting duplicate messages for some reason...
-    if (isGenerating) {
-      console.log("Ignoring message while generating response...");
-      return;
-    }
-
-    if (message.who !== peerKey) {
-      console.log("Ignoring message not from peer...");
-      return;
-    }
-
     const question = message.data;
+    roomPrint(room, `User asked: ${question}`);
     questionsLeft--;
 
     if (questionsLeft <= 0) {
       await room.message("You've used all your questions. The object was: " + object);
-      await shutdown();
+      return await gameOver();
     }
 
     if (question.toLowerCase() === "quit") {
       await room.message("You quit the game. The object was: " + object);
-      await shutdown();
+      return await gameOver();
     }
 
     if (question.toLowerCase().includes(object.toLowerCase())) {
-      room.message("You guessed the object! It was: " + object);
-      await shutdown();
+      await room.message("You guessed the object! It was: " + object);
+      return await gameOver();
     }
 
     messages.push({ role: "user", content: question });
-    isGenerating = true;
     const answer = await getResponse(messages);
-    isGenerating = false;
     messages.push({ role: "assistant", content: answer });
     messages.push({ role: "system", content: `User has ${questionsLeft} questions left.` });
 
     if (answer.toLowerCase().includes(object.toLowerCase())) {
-      room.message(`The object has been revealed!`);
-      await shutdown();
+      await room.message(`The object has been revealed!`);
+      return await gameOver();
     }
 
-    await room.message(answer);
+    return await room.message(answer);
   });
 
   async function exitRoom() {
     await room.exit();
   }
 
-  async function shutdown() {
-    console.log(`Game Over! The object was: ${object}`);
-    const transcript = await room.getTranscript();
-    console.log("transcript:", transcript);
+  async function gameOver() {
+    roomPrint(room, `Game Over! The object was: ${object}`);
+    // const transcript = await room.getTranscript();
+    // console.log("transcript:", transcript);
     await exitRoom();
-    process.exit(0);
   }
-
-  process.on("SIGINT", exitRoom);
-  process.on("SIGTERM", exitRoom);
 }
 
-playGame();
+const roomManager = new RoomManager()
+roomManager.installSIGHandlers() // handle shutdown signals
+roomManager.on("lastRoomClosed", () => playGame(roomManager.createRoom()))
+playGame(roomManager.createRoom())
+
+
