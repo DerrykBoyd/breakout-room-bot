@@ -5,7 +5,6 @@
   "main": "index.mjs",
   "type": "module",
   "scripts": {
-    "test": "node --env-file=.env test.mjs",
     "start": "node --env-file=.env index.mjs"
   },
   "author": "Derryk Boyd",

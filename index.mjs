@@ -1,4 +1,4 @@
-import { BreakoutRoom, RoomManager } from "breakout-room";
+import { RoomManager } from "breakout-room";
 import OpenAI from "openai";
 
 const openai = new OpenAI();
@@ -108,7 +108,6 @@ async function playGame(room) {
     gameOver();
   });
 
-
   room.on("message", async (message) => {
     const question = message.data;
     roomPrint(room, `User asked: ${question}`);
@@ -154,9 +153,7 @@ async function playGame(room) {
   }
 }
 
-const roomManager = new RoomManager()
-roomManager.installSIGHandlers() // handle shutdown signals
-roomManager.on("lastRoomClosed", () => playGame(roomManager.createRoom()))
-playGame(roomManager.createRoom())
-
-
+const roomManager = new RoomManager();
+roomManager.installSIGHandlers(); // handle shutdown signals
+roomManager.on("lastRoomClosed", () => playGame(roomManager.createRoom()));
+playGame(roomManager.createRoom());
